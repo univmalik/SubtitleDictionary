@@ -1,0 +1,1723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Subtitle Dictionary — MVP</title>
+  <style>
+    :root {
+      --bg: #faf7f5;
+      --fg: #4a2c2a;
+      --muted: #8b6f6d;
+      --brand: #8b5cf6;
+      --card: #f5f0ee;
+      --accent: #ede3e1;
+      --ok: #10b981;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --shadow: 0 4px 12px rgba(139, 69, 19, 0.15);
+      --border: #d6c2bf;
+      --hover: #f0e6e4;
+      --active: #e8ddd9;
+    }
+    * { box-sizing: border-box; }
+    html, body { 
+      height: 100%; 
+      background: var(--bg); 
+      color: var(--fg); 
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; 
+    }
+    body { margin: 0; display: grid; grid-template-rows: auto 1fr auto; }
+
+    /* Top bar */
+    header { 
+      display:flex; 
+      gap: 12px; 
+      align-items:center; 
+      padding: 12px 16px; 
+      border-bottom: 1px solid var(--border); 
+      background: linear-gradient(180deg, #f8f4f2, #f2ebe8); 
+      position: sticky; 
+      top: 0; 
+      z-index: 5; 
+    }
+    header .title { font-weight: 700; letter-spacing: .2px; margin-right: auto; color: #8b4513; }
+    header .badge { 
+      padding: 2px 8px; 
+      border-radius: 999px; 
+      font-size: 12px; 
+      background: var(--accent); 
+      color: var(--muted); 
+      border: 1px solid var(--border); 
+    }
+    .btn { 
+      appearance: none; 
+      border: 1px solid var(--border); 
+      background: #ffffff; 
+      color: var(--fg); 
+      padding: 9px 12px; 
+      border-radius: 12px; 
+      font-weight: 600; 
+      cursor: pointer; 
+      box-shadow: var(--shadow); 
+      transition: .15s ease transform, .15s ease background; 
+    }
+    .btn:hover { 
+      transform: translateY(-1px); 
+      background: var(--hover); 
+    }
+    .btn:active { transform: translateY(0); }
+    .btn.secondary { 
+      background: var(--accent); 
+      border-color: var(--border); 
+      color: var(--fg); 
+    }
+    .btn.secondary:hover {
+      background: var(--active);
+    }
+
+    /* Layout */
+    main { display:grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 16px; }
+    @media (max-width: 1100px) { main { grid-template-columns: 1fr; } #settings { order: -1; } }
+
+    /* Player card */
+    .card { 
+      background: var(--card); 
+      border: 1px solid var(--border); 
+      border-radius: 16px; 
+      box-shadow: var(--shadow); 
+      overflow: hidden; 
+    }
+    #stage { position: relative; background: #0b0c10; }
+    video { width: 100%; height: auto; display:block; background:#000; position: relative; z-index: 0; }
+    #altAudio { display: none; }
+
+    /* Hide native fullscreen/PiP buttons that can steal the layer order */
+    video::-webkit-media-controls-fullscreen-button { display:none !important; }
+    video::-webkit-media-controls-picture-in-picture-button { display:none !important; }
+
+    /* Subtitle overlay (clickable) */
+    #subsOverlay { 
+      position: absolute; 
+      left: 0; 
+      right: 0; 
+      bottom: 6%; 
+      display: flex; 
+      justify-content: center; 
+      pointer-events: none; 
+      z-index: 2; 
+      transform: translateZ(0); 
+      will-change: transform; 
+    }
+    #subsLine { 
+      pointer-events: auto; 
+      max-width: 80%; 
+      line-height: 1.6; 
+      font-size: clamp(16px, 2.2vw, 26px); 
+      text-align: center; 
+      padding: 10px 14px; 
+      border-radius: 14px; 
+      background: rgba(245, 240, 238, 0.95); 
+      border: 1px solid rgba(139, 69, 19, 0.2); 
+      backdrop-filter: blur(4px); 
+      box-shadow: var(--shadow); 
+      color: var(--fg);
+    }
+    #subsLine .tok { 
+      cursor: pointer; 
+      padding: 2px 2px; 
+      border-radius: 6px; 
+      transition: background .1s ease; 
+      white-space: pre-wrap; 
+    }
+    #subsLine .tok:hover { 
+      background: rgba(139, 69, 19, 0.15); 
+    }
+
+    /* Popover */
+    #popover { 
+      position: fixed; 
+      min-width: 320px; 
+      max-width: 520px; 
+      background: #ffffff; 
+      border: 1px solid var(--border); 
+      border-radius: 14px; 
+      padding: 12px 12px 10px; 
+      box-shadow: 0 8px 32px rgba(139, 69, 19, 0.2); 
+      display:none; 
+      z-index: 3; 
+      transform: translateZ(0); 
+      will-change: transform; 
+    }
+    
+    /* Fullscreen styles */
+    #stage:fullscreen #subsOverlay,
+    #stage:-webkit-full-screen #subsOverlay,
+    #stage:-moz-full-screen #subsOverlay,
+    #stage:-ms-fullscreen #subsOverlay {
+      bottom: 12%;
+      font-size: clamp(20px, 3vw, 36px);
+    }
+    
+    #stage:fullscreen #subsLine,
+    #stage:-webkit-full-screen #subsLine,
+    #stage:-moz-full-screen #subsLine,
+    #stage:-ms-fullscreen #subsLine {
+      font-size: clamp(20px, 3vw, 36px);
+      padding: 14px 20px;
+    }
+    
+    #stage:fullscreen #popover,
+    #stage:-webkit-full-screen #popover,
+    #stage:-moz-full-screen #popover,
+    #stage:-ms-fullscreen #popover {
+      max-width: 600px;
+      font-size: 16px;
+    }
+    #popover h3 { margin: 0 0 6px; font-size: 16px; color: #6b3410; }
+    #popover .sub { color: #5a3f3d; font-size: 13px; margin-bottom: 8px; }
+    #popover .sense { 
+      background: var(--accent); 
+      border: 1px solid var(--border); 
+      border-radius: 10px; 
+      padding: 8px; 
+      margin: 6px 0; 
+    }
+    #popover .sense strong { color: #6b3410; }
+    #popover .sense div { color: #5a3f3d; }
+    #popover .bar { 
+      display:flex; 
+      gap:8px; 
+      align-items:center; 
+      justify-content: space-between; 
+      margin-top:6px; 
+    }
+    #popover .chip { 
+      font-size: 12px; 
+      padding: 2px 8px; 
+      border-radius: 999px; 
+      border: 1px solid var(--border); 
+      background: var(--hover); 
+      color: var(--fg); 
+    }
+
+    /* Settings */
+    #settings { padding: 12px; }
+    #settings .section { 
+      background: var(--card); 
+      border: 1px solid var(--border); 
+      border-radius: 14px; 
+      padding: 12px; 
+      margin-bottom: 12px; 
+    }
+    #settings label { 
+      display:block; 
+      font-size: 12px; 
+      color: var(--muted); 
+      margin-bottom: 6px; 
+    }
+    #settings input[type="text"], 
+    #settings input[type="password"], 
+    #settings textarea, 
+    #settings select { 
+      width: 100%; 
+      background: #ffffff; 
+      color: var(--fg); 
+      border: 1px solid var(--border); 
+      border-radius: 10px; 
+      padding: 8px 10px; 
+    }
+    #settings input[type="text"]:focus,
+    #settings input[type="password"]:focus,
+    #settings textarea:focus,
+    #settings select:focus {
+      outline: none;
+      border-color: #8b4513;
+      box-shadow: 0 0 0 2px rgba(139, 69, 19, 0.1);
+    }
+    #settings textarea { 
+      min-height: 160px; 
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; 
+      font-size: 12px; 
+    }
+
+    /* Footer */
+    footer { 
+      padding: 8px 16px; 
+      color: var(--muted); 
+      font-size: 12px; 
+      border-top: 1px solid var(--border); 
+      background: var(--accent);
+    }
+
+    /* Helper */
+    .row { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
+    .sr { position: absolute; left:-9999px; width:1px; height: 1px; overflow: hidden; }
+
+    /* Additional light theme improvements */
+    #vocabList {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+    }
+    #vocabList > div {
+      border-bottom-color: var(--border) !important;
+    }
+    .chip {
+      background: var(--accent) !important;
+      color: var(--fg) !important;
+      border: 1px solid var(--border) !important;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">🎬 Subtitle Dictionary — MVP <span class="badge">Client-only prototype</span></div>
+    <span id="secureContextBadge" class="badge" style="display:none;"></span>
+    <button id="loadVideoBtn" class="btn secondary">Load Video</button>
+    <input id="videoFile" class="sr" type="file" accept="video/*" />
+    <button id="loadSubsBtn" class="btn secondary">Load Subtitles (.vtt/.srt)</button>
+    <input id="vttFile" class="sr" type="file" accept=".vtt,.srt,text/vtt,text/plain" />
+    <button id="clearCache" class="btn secondary" title="Clear cached definitions">Clear Cache</button>
+    <button id="reopenLast" class="btn secondary" title="Reopen last video/subs if permitted">Reopen Last</button>
+    <select id="audioTrackSelect" class="btn secondary" style="min-width:200px; display:none;" title="Select audio track"></select>
+    <button id="loadAltAudioBtn" class="btn secondary" title="Use an external audio file (fallback)">Use External Audio</button>
+    <button id="clearAltAudio" class="btn secondary" style="display:none;" title="Return to embedded audio">Remove External Audio</button>
+    <input id="audioFile" class="sr" type="file" accept="audio/*" />
+    <button id="fsBtn" class="btn secondary" title="Toggle fullscreen">Fullscreen</button>
+  </header>
+
+  <main>
+    <!-- Player column -->
+    <section id="playerCard" class="card">
+      <div id="stage">
+        <video id="vid" controls controlsList="nofullscreen noremoteplayback" playsinline webkit-playsinline crossorigin="anonymous">
+          <track id="track" kind="subtitles" srclang="ar" label="العربية" default>
+        </video>
+        <audio id="altAudio" preload="metadata" crossorigin="anonymous"></audio>
+        <div id="subsOverlay"><div id="subsLine"></div></div>
+        <div id="popover" role="dialog" aria-modal="false"></div>
+      </div>
+      <div style="padding: 12px; border-top:1px solid #1f2337; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button id="backBtn" class="btn secondary" style="padding:6px 12px;">⏪ -3s</button>
+        <button id="nextBtn" class="btn secondary" style="padding:6px 12px;">+3s ⏩</button>
+        <span style="color:var(--muted); flex:1; min-width:200px;">Tip: pause the video, then click any word in the subtitle.</span>
+        <span class="chip">Space = Play/Pause</span>
+        <span class="chip">L/R arrows = Seek ±3s</span>
+      </div>
+    </section>
+
+    <!-- Settings / Prompt column -->
+    <aside id="settings">
+      <div class="section" id="persistenceStatus" style="display:none;">
+        <div style="font-weight:700; display:flex; align-items:center; gap:8px;">
+          <span id="persistenceIcon">⚠️</span>
+          <span>File Persistence Status</span>
+        </div>
+        <div id="persistenceMessage" style="color:var(--muted); font-size:13px; margin-top:8px; line-height:1.5;"></div>
+      </div>
+
+      <div class="section">
+        <div class="row" style="justify-content:space-between; width:100%;">
+          <div>
+            <div style="font-weight:700;">AI Settings</div>
+            <div style="color:var(--muted); font-size:12px;">For quick testing you can paste your Gemini API key here (not for production).</div>
+          </div>
+          <button id="testPing" class="btn">Test</button>
+        </div>
+        <label>Gemini API Key (v1beta) — stored locally in your browser</label>
+        <input id="apiKey" type="password" placeholder="AIza…" />
+        <div class="row" style="margin-top:8px;">
+          <div style="flex:1;">
+            <label>Model</label>
+            <input id="model" type="text" value="gemini-1.5-flash" />
+          </div>
+          <div style="width:120px;">
+            <label>Source Lang (ISO)</label>
+            <input id="srcLang" type="text" value="ar" />
+          </div>
+          <div style="width:160px;">
+            <label>Target Langs (comma)</label>
+            <input id="tgtLangs" type="text" value="ar" />
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div style="font-weight:700;">Dictionary Mode / نوع القاموس</div>
+        <div style="margin:8px 0;">
+          <label style="display:block; margin-bottom:4px;">Select Dictionary Type:</label>
+          <select id="dictMode" style="width:100%; padding:8px; font-size:14px; border:1px solid var(--border); border-radius:4px; background:var(--bg);">
+            <option value="ar-ar">🇸🇦 Arabic-Arabic (عربي-عربي)</option>
+            <option value="ar-en">🇬🇧 Arabic-English (عربي-إنجليزي)</option>
+            <option value="es-es">🇪🇸 Spanish-Spanish (Español-Español)</option>
+            <option value="es-en">🇪🇸 Spanish-English (Español-Inglés)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section">
+        <div style="font-weight:700;">Custom Dictionary Instructions (prompt)</div>
+        <div style="color:var(--muted); font-size:12px; margin:6px 0 8px;">This is sent to the model on every lookup. You can tweak it freely.</div>
+        <textarea id="promptTpl"></textarea>
+        <div class="row" style="margin-top:8px;">
+          <button id="saveSettings" class="btn">Save Settings</button>
+          <button id="resetPrompt" class="btn secondary">Reset Prompt</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div style="font-weight:700;">Saved Vocab</div>
+        <div id="vocabList" style="margin-top:8px; font-size:14px; max-height: 220px; overflow:auto;"></div>
+        <div class="row" style="margin-top:8px;">
+          <button id="exportCsv" class="btn secondary">Export CSV</button>
+          <button id="clearVocab" class="btn secondary">Clear Vocab</button>
+        </div>
+      </div>
+
+      <div class="section" style="font-size:12px; color:var(--muted);">
+        <strong>Security note:</strong> Putting API keys in a web page is fine for local testing but not for production.
+        Use a tiny proxy backend to keep your key secret (sample Express proxy is included in a comment at the end of this file).
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    © 2025 — Subtitle Dictionary MVP. Built for rapid prototyping. No data is sent anywhere except to Gemini when you trigger a lookup. Cache lives in your browser (localStorage).
+  </footer>
+
+  <script>
+    // ---------------------------
+    // Utilities
+    // ---------------------------
+    const $ = sel => document.querySelector(sel);
+    const subsOverlay = $('#subsOverlay');
+    const subsLineEl = $('#subsLine');
+    const popover = $('#popover');
+    const vid = $('#vid');
+    const trackEl = $('#track');
+    const stage = $('#stage');
+    const altAudio = $('#altAudio');
+    const audioSelect = $('#audioTrackSelect');
+    const loadAltAudioBtn = $('#loadAltAudioBtn');
+    const clearAltAudioBtn = $('#clearAltAudio');
+    const audioFileInput = $('#audioFile');
+
+  let fsSwitching = false;
+  let usingAltAudio = false;
+  let driftTimer = null;
+  let pendingAudioTrackIndex = null;
+
+    function resetAudioTrackSelector(){
+      pendingAudioTrackIndex = null;
+      audioSelect.innerHTML = '';
+      audioSelect.style.display = 'none';
+    }
+
+    const fsElement = () =>
+      document.fullscreenElement ||
+      document.webkitFullscreenElement || null;
+
+    const isStageFullscreen = () => fsElement() === stage;
+
+    async function enterStageFS() {
+      if (fsSwitching || isStageFullscreen()) return;
+      fsSwitching = true;
+      try {
+        if (stage.requestFullscreen) await stage.requestFullscreen({ navigationUI: 'hide' });
+        else if (stage.webkitRequestFullscreen) stage.webkitRequestFullscreen();
+      } finally { fsSwitching = false; }
+    }
+
+    async function exitFS() {
+      if (fsSwitching || !fsElement()) return;
+      fsSwitching = true;
+      try {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } finally { fsSwitching = false; }
+    }
+
+    function toggleFullscreen() {
+      isStageFullscreen() ? exitFS() : enterStageFS();
+    }
+
+    $('#fsBtn').addEventListener('click', toggleFullscreen);
+
+    // Let double-click toggle stage fullscreen, but prevent the video's own FS.
+    stage.addEventListener('dblclick', (e) => { e.preventDefault(); toggleFullscreen(); });
+    vid.addEventListener('dblclick', (e) => { e.preventDefault(); toggleFullscreen(); });
+
+    function isFullscreen() { return !!fsElement(); }
+
+    const LS = {
+      get k(){ return JSON.parse(localStorage.getItem('sdmvp-k')||'{}'); },
+      set k(v){ localStorage.setItem('sdmvp-k', JSON.stringify(v)); },
+      get cache(){ return JSON.parse(localStorage.getItem('sdmvp-cache')||'{}'); },
+      set cache(v){ localStorage.setItem('sdmvp-cache', JSON.stringify(v)); },
+      get vocab(){ return JSON.parse(localStorage.getItem('sdmvp-vocab')||'[]'); },
+      set vocab(v){ localStorage.setItem('sdmvp-vocab', JSON.stringify(v)); },
+      get prompt(){ return localStorage.getItem('sdmvp-prompt') || '' },
+      set prompt(v){ localStorage.setItem('sdmvp-prompt', v); },
+      get dictMode(){ return localStorage.getItem('sdmvp-dictmode') || 'ar-ar'; },
+      set dictMode(v){ localStorage.setItem('sdmvp-dictmode', v); },
+      // Remembered subtitle text (small enough to store)
+      get vttText(){ return localStorage.getItem('sdmvp-vtt') || ''; },
+      set vttText(t){ localStorage.setItem('sdmvp-vtt', t || ''); },
+      // Video position + pause/play state
+      get vidPos(){ return +(localStorage.getItem('sdmvp-vidpos')||0); },
+      set vidPos(s){ localStorage.setItem('sdmvp-vidpos', String(s||0)); },
+      get wasPaused(){ return localStorage.getItem('sdmvp-paused') === '1'; },
+      set wasPaused(b){ localStorage.setItem('sdmvp-paused', b ? '1':'0'); },
+    };
+
+    // ---- Per-video playback persistence ----
+    let CUR_SIG = null;
+
+    const VS = {
+      get map(){ return JSON.parse(localStorage.getItem('sdmvp-vidmap')||'{}'); },
+      set map(v){ localStorage.setItem('sdmvp-vidmap', JSON.stringify(v)); },
+
+      sigFromFile(f){
+        if (!f) return null;
+        return `file:${f.name}|${f.size}|${f.lastModified||0}`;
+      },
+      sigFromSrc(){
+        const u = vid.currentSrc || vid.src || '';
+        return u ? `url:${u}` : null;
+      },
+
+      getEntry(){
+        CUR_SIG ||= this.sigFromSrc();
+        if (!CUR_SIG) return null;
+        const map = this.map;
+        return map[CUR_SIG] || null;
+      },
+
+      getAudioTrack(){
+        const entry = this.getEntry();
+        return (entry && typeof entry.audioTrack === 'number') ? entry.audioTrack : null;
+      },
+
+      setAudioTrack(idx){
+        if (typeof idx !== 'number' || Number.isNaN(idx)) return;
+        CUR_SIG ||= this.sigFromSrc();
+        if (!CUR_SIG) return;
+        const map = this.map;
+        const entry = map[CUR_SIG] || {};
+        entry.audioTrack = idx;
+        map[CUR_SIG] = entry;
+        this.map = map;
+      },
+
+      save(flush=false){
+        // Update legacy keys for backward compatibility
+        LS.vidPos = vid.currentTime || 0;
+        LS.wasPaused = vid.paused;
+
+        // Save to per-video map
+        CUR_SIG ||= this.sigFromSrc();
+        if (!CUR_SIG) return;
+        const m = this.map;
+        const prev = m[CUR_SIG]?.pos ?? 0;
+        // Throttle unless we're explicitly flushing (pagehide/beforeunload/pause)
+        if (!flush && Math.abs((vid.currentTime||0) - prev) < 0.5) return;
+
+        const entry = m[CUR_SIG] || {};
+        entry.pos = Math.max(0, Math.min(vid.currentTime || 0, (vid.duration||Infinity) - 0.25));
+        entry.paused = vid.paused;
+        entry.t = Date.now();
+        if (pendingAudioTrackIndex !== null) entry.audioTrack = pendingAudioTrackIndex;
+        m[CUR_SIG] = entry;
+        this.map = m;
+      },
+
+      restore(){
+        CUR_SIG ||= VS.sigFromSrc();
+        let entry = CUR_SIG ? VS.map[CUR_SIG] : null;
+
+        pendingAudioTrackIndex = (entry && typeof entry.audioTrack === 'number') ? entry.audioTrack : null;
+
+        // Fallback to legacy single-slot keys if no per-video record
+        const pos = entry?.pos ?? LS.vidPos;
+        const paused = entry?.paused ?? LS.wasPaused;
+
+        if (pos > 0 && pos < (vid.duration || Infinity)) {
+          try { vid.currentTime = pos; } catch(_) {}
+        }
+        if (!paused) {
+          vid.play().catch(()=>{ /* autoplay may be blocked; that's fine */ });
+        }
+      }
+    };
+
+    // --- IndexedDB for FileSystem handles (optional) ---
+    const HandlesDB = (() => {
+      const DB_NAME = 'sdmvp-db', STORE = 'handles';
+      let ready;
+      function open() {
+        return new Promise((res, rej) => {
+          const r = indexedDB.open(DB_NAME, 1);
+          r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+          r.onerror = () => rej(r.error);
+          r.onsuccess = () => res(r.result);
+        });
+      }
+      async function db() { return (ready ||= open()); }
+      return {
+        async put(key, handle){
+          const d = await db(); return new Promise((res, rej)=>{
+            const tx = d.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(handle, key);
+            tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+          });
+        },
+        async get(key){
+          const d = await db(); return new Promise((res, rej)=>{
+            const tx = d.transaction(STORE,'readonly'); const req = tx.objectStore(STORE).get(key);
+            req.onsuccess = () => res(req.result || null); req.onerror = () => rej(req.error);
+          });
+        }
+      };
+    })();
+
+    function stripHtml(s){ const t=document.createElement('textarea'); t.innerHTML=s; return t.value.replace(/<[^>]+>/g,''); }
+    function tokSplit(s){
+      // Arabic-aware: include combining marks \p{M}
+      const re = /(\p{L}\p{M}*[\p{L}\p{M}''\-]*|\p{N}+|\s+|[^\p{L}\p{N}\s])/gu;
+      return s.match(re) || [s];
+    }
+    function keyFor(q){
+      const {lang, head, span, sentence} = q;
+      return `${lang}|${(span||head).toLowerCase()}|${sentence.toLowerCase()}`;
+    }
+    function placePopoverNear(target){
+      const r = target.getBoundingClientRect();
+      let stageR;
+      if (isStageFullscreen()) {
+        stageR = {
+          left: 0,
+          right: window.innerWidth,
+          top: 0,
+          bottom: window.innerHeight
+        };
+      } else {
+        stageR = stage.getBoundingClientRect();
+      }
+      
+      // Calculate position with better fullscreen handling
+      const popWidth = popover.offsetWidth || 360;
+      const popHeight = popover.offsetHeight || 200;
+      
+      // Horizontal positioning
+      let x = r.left - 20;
+      if(x + popWidth > stageR.right - 8) {
+        x = stageR.right - 8 - popWidth;
+      }
+      if(x < stageR.left + 8) {
+        x = stageR.left + 8;
+      }
+      
+      // Vertical positioning (above the clicked word)
+      let y = r.top - 12 - popHeight;
+      if(y < stageR.top + 8) {
+        // If not enough space above, place below
+        y = r.bottom + 12;
+      }
+      
+      popover.style.left = x + 'px';
+      popover.style.top = y + 'px';
+    }
+
+    function isFullscreen() { return !!fsElement(); }
+
+    // ---------------------------
+    // File Loading (video & VTT/SRT)
+    // ---------------------------
+    // Load Video Button - uses File System Access API if available
+    $('#loadVideoBtn').addEventListener('click', async () => {
+      if (await canUseFS()) {
+        try {
+          await openVideoWithHandle();
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error('Failed to open video:', err);
+            // Fallback to regular file input
+            $('#videoFile').click();
+          }
+        }
+      } else {
+        // Fallback to regular file input
+        $('#videoFile').click();
+      }
+    });
+
+    // Load Subtitles Button - uses File System Access API if available
+    $('#loadSubsBtn').addEventListener('click', async () => {
+      if (await canUseFS()) {
+        try {
+          await openSubsWithHandle();
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error('Failed to open subtitles:', err);
+            // Fallback to regular file input
+            $('#vttFile').click();
+          }
+        }
+      } else {
+        // Fallback to regular file input
+        $('#vttFile').click();
+      }
+    });
+
+    $('#videoFile').addEventListener('change', async e => {
+      const f = e.target.files?.[0]; if(!f) return;
+  CUR_SIG = VS.sigFromFile(f);          // <— add this line
+  resetAudioTrackSelector();
+  const url = URL.createObjectURL(f);
+  vid.src = url; vid.load();
+      LS.vidPos = 0; // new video → start from 0
+      LS.wasPaused = true;
+      
+      // Note: Regular file input doesn't provide persistent handles
+      // Users should use the File System Access API for auto-restore
+      console.log('Video loaded. Use "Load Video" with File System Access for auto-restore on next visit.');
+    });
+
+    $('#vttFile').addEventListener('change', async e => {
+      const f = e.target.files?.[0]; if(!f) return;
+      
+      let text = await f.text();
+      // Basic SRT -> VTT conversion if needed
+      if(/\d+\s*\n\d{2}:\d{2}:\d{2},\d{3}\s-->\s\d{2}:\d{2}:\d{2},\d{3}/.test(text)){
+        text = 'WEBVTT\n\n' + text.replace(/,(?=\d{3})/g, '.');
+      } else if(!/^WEBVTT/.test(text)) {
+        text = 'WEBVTT\n\n' + text;
+      }
+      LS.vttText = text; // persist the subtitle contents
+      const blob = new Blob([text], {type:'text/vtt'});
+      const url = URL.createObjectURL(blob);
+      trackEl.src = url;
+      // Ensure we can read cues
+      const t = vid.textTracks[0];
+      if(t){
+        t.mode = 'hidden';
+        t.addEventListener('cuechange', updateActiveCueOverlay);
+        console.log('Cues loaded:', t.cues?.length);
+      }
+    });
+
+    // ---------------------------
+    // Subtitles → clickable overlay
+    // ---------------------------
+    let lastLine = '';
+    function renderLine(line){
+      const dir = (LS.k.srcLang||'en').toLowerCase() === 'ar' ? 'rtl' : 'ltr';
+      subsLineEl.setAttribute('dir', dir);
+      subsLineEl.innerHTML = '';
+      // Always render with clickable tokens (windowed or fullscreen)
+      const toks = tokSplit(line);
+      toks.forEach(tok => {
+        if(/\p{L}|\p{N}/u.test(tok)){
+          const span = document.createElement('span');
+          span.className='tok';
+          span.textContent = tok;
+          span.dataset.w = tok;
+          span.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (vid.paused) onTokenClick(span, tok, line);
+          });
+          subsLineEl.appendChild(span);
+        } else {
+          subsLineEl.appendChild(document.createTextNode(tok));
+        }
+      });
+    }
+
+    function updateActiveCueOverlay(){
+      const tt = vid.textTracks[0]; if(!tt) return;
+      const cue = tt.activeCues && tt.activeCues[0];
+      if(!cue){ 
+        subsOverlay.style.display='none'; 
+        return; 
+      }
+      lastLine = stripHtml(cue.text || '');
+      renderLine(lastLine);
+      // Always show subtitles when paused, regardless of fullscreen state
+      subsOverlay.style.display = vid.paused ? 'flex' : 'none';
+    }
+
+    vid.addEventListener('pause', () => { 
+      updateActiveCueOverlay();
+      VS.save(true);
+      // Ensure overlay shows immediately on pause
+      setTimeout(() => {
+        if(vid.paused) {
+          subsOverlay.style.display = 'flex';
+        }
+      }, 50);
+    });
+    vid.addEventListener('play', () => { 
+      subsOverlay.style.display='none'; 
+      popover.style.display='none'; 
+    });
+    vid.addEventListener('timeupdate', () => {
+      VS.save(false); // throttled
+      if(vid.paused) updateActiveCueOverlay();
+    });
+    vid.addEventListener('seeking', () => VS.save(true));
+    vid.addEventListener('ended', () => VS.save(true));
+    vid.addEventListener('seeked', ()=>{ if(vid.paused) updateActiveCueOverlay(); });
+    vid.addEventListener('loadeddata', updateActiveCueOverlay);
+    vid.addEventListener('loadedmetadata', () => { 
+      VS.restore();
+      const t=vid.textTracks[0]; if(t){ t.mode='hidden'; t.addEventListener('cuechange', updateActiveCueOverlay); }
+      setupAudioTracks();
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) VS.save(true);
+    });
+    window.addEventListener('pagehide', () => VS.save(true));
+    window.addEventListener('beforeunload', () => VS.save(true));
+
+    // Keep overlay logic but don't auto-exit or auto-promote from <video> FS.
+    document.addEventListener('fullscreenchange', () => {
+      if (vid.paused) updateActiveCueOverlay();
+      if (isStageFullscreen()) popover.style.display = 'none';
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+      if (vid.paused) updateActiveCueOverlay();
+      if (isStageFullscreen()) popover.style.display = 'none';
+    });
+    document.addEventListener('mozfullscreenchange', () => {
+      if (vid.paused) updateActiveCueOverlay();
+      if (isStageFullscreen()) popover.style.display = 'none';
+    });
+    document.addEventListener('MSFullscreenChange', () => {
+      if (vid.paused) updateActiveCueOverlay();
+      if (isStageFullscreen()) popover.style.display = 'none';
+    });
+
+    // ---------------------------
+    // Multi-Audio Track Support
+    // ---------------------------
+    
+    // Safari: Native audioTracks API
+    function setupAudioTracks() {
+      const atl = vid.audioTracks;
+      audioSelect.innerHTML = '';
+
+      if (!atl || typeof atl.length === 'undefined' || atl.length === 0) {
+        audioSelect.style.display = 'none';
+        pendingAudioTrackIndex = null;
+        return;
+      }
+
+      const hasMultiple = atl.length > 1;
+      let desiredIdx = pendingAudioTrackIndex;
+
+      if (desiredIdx === null || desiredIdx < 0 || desiredIdx >= atl.length) {
+        const stored = VS.getAudioTrack();
+        if (stored !== null && stored >= 0 && stored < atl.length) desiredIdx = stored;
+        else desiredIdx = 0;
+      }
+
+      for (let i = 0; i < atl.length; i++) {
+        const t = atl[i];
+        const opt = document.createElement('option');
+        const lang = t.language || t.lang || '';
+        opt.value = String(i);
+        const label = t.label || lang || `Track ${i+1}`;
+        opt.textContent = `${i+1}: ${label}${lang ? ` (${lang})` : ''}`;
+        audioSelect.appendChild(opt);
+      }
+
+      audioSelect.style.display = hasMultiple ? '' : 'none';
+      audioSelect.value = String(desiredIdx);
+      enableAudioTrack(desiredIdx);
+    }
+
+    function enableAudioTrack(idx) {
+      const atl = vid.audioTracks;
+      if (!atl || typeof idx !== 'number' || Number.isNaN(idx)) return;
+      for (let i = 0; i < atl.length; i++) atl[i].enabled = (i === idx);
+      pendingAudioTrackIndex = idx;
+      audioSelect.value = String(idx);
+      VS.setAudioTrack(idx);
+    }
+
+    audioSelect.addEventListener('change', () => enableAudioTrack(+audioSelect.value));
+
+    if (vid.audioTracks?.addEventListener) {
+      vid.audioTracks.addEventListener('addtrack', setupAudioTracks);
+      vid.audioTracks.addEventListener('removetrack', setupAudioTracks);
+    }
+
+    // Cross-browser fallback: External audio file
+    loadAltAudioBtn.addEventListener('click', () => audioFileInput.click());
+
+    audioFileInput.addEventListener('change', async (e) => {
+      const f = e.target.files?.[0]; if (!f) return;
+      altAudio.src = URL.createObjectURL(f);
+      usingAltAudio = true;
+      vid.muted = true;
+      clearAltAudioBtn.style.display = '';
+      await altAudio.load?.();
+
+      const onMeta = () => {
+        syncAltAudio(true);
+        if (!vid.paused) altAudio.play().catch(()=>{});
+        startDriftCorrection();
+      };
+      if (altAudio.readyState >= 1) onMeta(); else altAudio.addEventListener('loadedmetadata', onMeta, { once: true });
+    });
+
+    clearAltAudioBtn.addEventListener('click', disableAltAudio);
+
+    function disableAltAudio() {
+      if (!usingAltAudio) return;
+      usingAltAudio = false;
+      stopDriftCorrection();
+      try { altAudio.pause(); } catch {}
+      altAudio.removeAttribute('src'); altAudio.load();
+      vid.muted = false;
+      clearAltAudioBtn.style.display = 'none';
+    }
+
+    function syncAltAudio(seek=false) {
+      if (!usingAltAudio) return;
+      const vt = vid.currentTime || 0;
+      const at = altAudio.currentTime || 0;
+      const drift = at - vt;
+      if (seek || Math.abs(drift) > 0.15) altAudio.currentTime = vt; // hard-correct >150ms
+      altAudio.playbackRate = vid.playbackRate || 1;
+      altAudio.volume = 1; // video is muted while using external track
+    }
+
+    function startDriftCorrection() {
+      stopDriftCorrection();
+      driftTimer = setInterval(() => syncAltAudio(false), 250);
+    }
+    function stopDriftCorrection() { if (driftTimer) { clearInterval(driftTimer); driftTimer = null; } }
+
+    // Keep the external audio in step with the video
+    vid.addEventListener('play', () => { if (usingAltAudio) { syncAltAudio(true); altAudio.play().catch(()=>{}); startDriftCorrection(); } });
+    vid.addEventListener('pause', () => { if (usingAltAudio) { altAudio.pause(); stopDriftCorrection(); } });
+    vid.addEventListener('seeking', () => { if (usingAltAudio) syncAltAudio(true); });
+    vid.addEventListener('ratechange', () => { if (usingAltAudio) altAudio.playbackRate = vid.playbackRate || 1; });
+    vid.addEventListener('ended', () => { if (usingAltAudio) { altAudio.pause(); stopDriftCorrection(); } });
+
+    // ---------------------------
+    // Keyboard Navigation (3-second seeking)
+    // ---------------------------
+    document.addEventListener('keydown', (e) => {
+      // Only handle keys when not typing in input fields
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      
+      switch(e.code) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (vid.duration) {
+            vid.currentTime = Math.max(0, vid.currentTime - 3);
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (vid.duration) {
+            vid.currentTime = Math.min(vid.duration, vid.currentTime + 3);
+          }
+          break;
+        case 'Space':
+          e.preventDefault();
+          if (vid.paused) {
+            vid.play().catch(() => {});
+          } else {
+            vid.pause();
+          }
+          break;
+      }
+    });
+
+    // ---------------------------
+    // Custom Skip Buttons (3 seconds)
+    // ---------------------------
+    $('#backBtn').addEventListener('click', () => {
+      if (vid.duration) {
+        vid.currentTime = Math.max(0, vid.currentTime - 3);
+      }
+    });
+
+    $('#nextBtn').addEventListener('click', () => {
+      if (vid.duration) {
+        vid.currentTime = Math.min(vid.duration, vid.currentTime + 3);
+      }
+    });
+
+    // ---------------------------
+    // File System Access API & Reopen Functions
+    // ---------------------------
+    async function canUseFS() {
+      return !!(window.showOpenFilePicker && 'storage' in navigator);
+    }
+
+    async function openVideoWithHandle() {
+      if (!(await canUseFS())) return false;
+      const [h] = await showOpenFilePicker({ types: [{ description:'Video', accept: {'video/*':['.mp4','.webm','.mkv','.mov']}}] });
+      await HandlesDB.put('video', h);
+      const file = await h.getFile();
+  CUR_SIG = VS.sigFromFile(file);         // <— add this
+  resetAudioTrackSelector();
+  vid.src = URL.createObjectURL(file); vid.load();
+      LS.vidPos = 0; LS.wasPaused = true;
+      return true;
+    }
+
+    async function openSubsWithHandle() {
+      if (!(await canUseFS())) return false;
+      const [h] = await showOpenFilePicker({ types: [{ description:'Subtitles', accept: {'text/vtt':['.vtt'], 'text/plain':['.srt']}}] });
+      await HandlesDB.put('subs', h);
+      const text = await (await h.getFile()).text();
+      // reuse the same conversion logic:
+      let t = text;
+      if(/\d+\s*\n\d{2}:\d{2}:\d{2},\d{3}\s-->\s\d{2}:\d{2}:\d{2},\d{3}/.test(t)) { t = 'WEBVTT\n\n' + t.replace(/,(?=\d{3})/g,'.'); }
+      else if(!/^WEBVTT/.test(t)) { t = 'WEBVTT\n\n' + t; }
+      LS.vttText = t;
+      const blob = new Blob([t], {type:'text/vtt'});
+      trackEl.src = URL.createObjectURL(blob);
+      const tt = vid.textTracks[0]; if (tt){ tt.mode='hidden'; tt.addEventListener('cuechange', updateActiveCueOverlay); }
+      return true;
+    }
+
+    // Restore video position and pause state
+    function restoreVideoPosition() {
+      if (LS.vidPos > 0 && LS.vidPos < (vid.duration || Infinity)) {
+        vid.currentTime = LS.vidPos;
+      }
+      // Restore pause/play state
+      if (!LS.wasPaused) { 
+        vid.play().catch(()=>{}); 
+      }
+    }
+
+    async function reopenLastIfPermitted() {
+      let videoRestored = false;
+      
+      // 1) try handles
+      try {
+        const vH = await HandlesDB.get('video');
+        if (vH && (await vH.queryPermission?.({mode:'read'})) === 'granted' || await vH.requestPermission?.({mode:'read'}) === 'granted') {
+          const file = await vH.getFile();
+          CUR_SIG = VS.sigFromFile(file);         // <— add this
+          resetAudioTrackSelector();
+          vid.src = URL.createObjectURL(file); 
+          vid.load();
+          videoRestored = true;
+          
+          // no need to attach another 'once' listener; global loadedmetadata handles restore
+        }
+        const sH = await HandlesDB.get('subs');
+        if (sH && (await sH.queryPermission?.({mode:'read'})) === 'granted' || await sH.requestPermission?.({mode:'read'}) === 'granted') {
+          const text = await (await sH.getFile()).text();
+          // store & mount
+          let t = text;
+          if(/\d+[\s\S]*?-->\s*\d{2}:\d{2}:\d{2},\d{3}/.test(t)){ t = 'WEBVTT\n\n' + t.replace(/,(?=\d{3})/g,'.'); }
+          else if(!/^WEBVTT/.test(t)) { t = 'WEBVTT\n\n' + t; }
+          LS.vttText = t;
+          const blob = new Blob([t], {type:'text/vtt'});
+          trackEl.src = URL.createObjectURL(blob);
+          const tt = vid.textTracks[0]; if (tt){ tt.mode='hidden'; tt.addEventListener('cuechange', updateActiveCueOverlay); }
+        }
+      } catch(_) {}
+
+      // 2) fall back to remembered VTT text only
+      if (!trackEl.src && LS.vttText) {
+        const blob = new Blob([LS.vttText], {type:'text/vtt'});
+        trackEl.src = URL.createObjectURL(blob);
+        const tt = vid.textTracks[0]; if (tt){ tt.mode='hidden'; tt.addEventListener('cuechange', updateActiveCueOverlay); }
+      }
+      
+      if (videoRestored) {
+        console.log('✓ Video reopened, position will be restored to', LS.vidPos, 'seconds');
+      }
+    }
+
+    // ---------------------------
+    // AI Lookup via Gemini
+    // ---------------------------
+    async function lookupMeaning({ head, sentence, lang, span }){
+      const cache = LS.cache; const k = keyFor({head, sentence, lang, span});
+      if(cache[k]) return cache[k];
+
+      const cfg = LS.k; const apiKey = cfg.apiKey; const model = cfg.model || 'gemini-1.5-flash';
+      if(!apiKey) throw new Error('No API key set.');
+
+      const targetLangs = (cfg.tgtLangs||'en').split(',').map(s=>s.trim()).filter(Boolean);
+      const prompt = buildPrompt({head, sentence, srcLang: cfg.srcLang||'en', targetLangs});
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        generationConfig: { temperature: 0.3, topP: 0.8, maxOutputTokens: 512 }
+      };
+
+      let outText = '';
+      try {
+        const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const json = await res.json();
+        outText = (json.candidates?.[0]?.content?.parts?.map(p=>p.text).join(''))
+               || json.output_text || '';
+      } catch (e) { console.error(e); throw new Error('Network/response error.'); }
+
+      const data = extractJSON(outText);
+      if(!data || !data.senses) throw new Error('Model did not return valid JSON.');
+      cache[k] = data; LS.cache = cache;
+      return data;
+    }
+
+    function buildPrompt({head, sentence, srcLang, targetLangs}){
+      const tpl = $('#promptTpl').value || DEFAULT_PROMPT;
+      return tpl
+        .replaceAll('{{HEAD}}', head)
+        .replaceAll('{{SENTENCE}}', sentence)
+        .replaceAll('{{SRC_LANG}}', srcLang)
+        .replaceAll('{{TGT_LANGS}}', targetLangs.join(','));
+    }
+
+    function extractJSON(s){
+      // Try plain JSON
+      try { return JSON.parse(s); } catch(_){ /* ignore */ }
+      // Try fenced code blocks
+      const m = s.match(/```(?:json)?\n([\s\S]*?)\n```/);
+      if(m){ try { return JSON.parse(m[1]); } catch(_){ } }
+      // Try lax braces
+      const i = s.indexOf('{'); const j = s.lastIndexOf('}');
+      if(i>=0 && j>i){ try { return JSON.parse(s.slice(i, j+1)); } catch(_){ } }
+      return null;
+    }
+
+    // ---------------------------
+    // Popover rendering & interactions
+    // ---------------------------
+    async function onTokenClick(el, tok, sentence){
+      // Ensure video stays paused when clicking a word
+      if(!vid.paused) {
+        vid.pause();
+      }
+      
+      popover.style.display='block'; 
+      popover.innerHTML = `<div class="sub">Looking up <strong>${escapeHtml(tok)}</strong>…</div>`;
+      placePopoverNear(el);
+      
+      const cfg = LS.k; 
+      const lang = cfg.srcLang || 'en';
+      try {
+        const data = await lookupMeaning({ head: tok, sentence, lang });
+        popover.innerHTML = renderDefinition(tok, data);
+        placePopoverNear(el);
+        // Wire buttons
+        popover.querySelector('[data-save]')?.addEventListener('click',()=>saveVocab(data));
+        popover.querySelector('[data-close]')?.addEventListener('click',()=>{
+          popover.style.display='none';
+        });
+      } catch (e){
+        popover.innerHTML = `<div class="sub" style="color:var(--err);">${escapeHtml(e.message)}</div>`;
+        placePopoverNear(el);
+      }
+    }
+
+    function renderDefinition(head, data){
+      const title = escapeHtml(data.span || head);
+      const lemma = data.lemma ? ` · ${escapeHtml(data.lemma)}` : '';
+      const pos = data.pos ? `<span class="chip">${escapeHtml(data.pos)}</span>` : '';
+
+      // Morphology chips (noun/adj + verb)
+      const morph = data.morph || {};
+      const nounChips = [];
+      if (morph.number)   nounChips.push(escapeHtml(morph.number));
+      if (morph.gender)   nounChips.push(escapeHtml(morph.gender));
+      if (morph.singular) nounChips.push(`sing.: ${escapeHtml(morph.singular)}`);
+      if (morph.plural)   nounChips.push(`pl.: ${escapeHtml(morph.plural)}`);
+
+      const mode = LS.dictMode;
+      const v = morph.verb || null;
+      let verbChips = [];
+      if (v) {
+        if (mode.startsWith('ar-')) {
+          if (v.past_3ms)    verbChips.push(`الماضي (هو): ${escapeHtml(v.past_3ms)}`);
+          if (v.present_3ms) verbChips.push(`المضارع (هو): ${escapeHtml(v.present_3ms)}`);
+          if (v.masdar)      verbChips.push(`مصدر: ${escapeHtml(v.masdar)}`);
+          if (v.form)        verbChips.push(`الوزن: ${escapeHtml(v.form)}`);
+        } else if (mode.startsWith('es-')) {
+          if (v.infinitive)    verbChips.push(`infinitivo: ${escapeHtml(v.infinitive)}`);
+          if (v.present_3s)    verbChips.push(`presente (3ª sg.): ${escapeHtml(v.present_3s)}`);
+          if (v.preterite_3s)  verbChips.push(`pretérito (3ª sg.): ${escapeHtml(v.preterite_3s)}`);
+          if (v.gerund)        verbChips.push(`gerundio: ${escapeHtml(v.gerund)}`);
+          if (v.participle)    verbChips.push(`participio: ${escapeHtml(v.participle)}`);
+        } else {
+          // Generic fallback: render any known fields as key: value
+          for (const [k,val] of Object.entries(v)) {
+            if (val) verbChips.push(`${escapeHtml(k)}: ${escapeHtml(val)}`);
+          }
+        }
+      }
+
+      const tgt = data.translations
+        ? Object.entries(data.translations)
+            .map(([k,v])=>`<span class="chip">${escapeHtml(k)}: ${escapeHtml(v)}</span>`).join(' ')
+        : '';
+
+      const senses = (data.senses||[]).map(s=>{
+        const mode = LS.dictMode;
+        const isBilingual = (mode === 'ar-en' || mode === 'es-en');
+        
+        // Build sense HTML based on dictionary mode
+        let html = '<div class="sense">';
+        
+        if (isBilingual) {
+          // Always show English gloss first
+          html += `<strong>🇬🇧 ${escapeHtml(s.gloss || '')}</strong>`;
+          if (s.register) html += ` <em style="color:var(--muted)">${escapeHtml(s.register)}</em>`;
+
+          // Native-language gloss: Arabic or Spanish
+          if (mode === 'ar-en' && s.gloss_ar) {
+            html += `<div style="margin-top:4px;"><strong>🇸🇦 ${escapeHtml(s.gloss_ar)}</strong></div>`;
+          } else if (mode === 'es-en' && s.gloss_es) {
+            html += `<div style="margin-top:4px;"><strong>🇪🇸 ${escapeHtml(s.gloss_es)}</strong></div>`;
+          }
+
+          // Examples: native example + English translation
+          html += `<div style="margin-top:4px; color:#6b3410; font-size:13px;">`;
+          // We standardize on "example" as native and "example_en" as English
+          html += `📝 ${escapeHtml(s.example || '')}`;
+          if (s.example_en) html += `<br><span style="color:#2d5016;">💬 ${escapeHtml(s.example_en)}</span>`;
+          html += `</div>`;
+        } else {
+          // Monolingual: gloss + example in the source language
+          html += `<strong>${escapeHtml(s.gloss||'')}</strong>`;
+          if (s.register) html += ` <em style="color:var(--muted)">${escapeHtml(s.register)}</em>`;
+          html += `<div style="margin-top:4px; color:#6b3410; font-size:13px;">${escapeHtml(s.example||'')}</div>`;
+        }
+        
+        html += '</div>';
+        return html;
+      }).join('');
+
+      const extra = [...nounChips, ...verbChips].map(c=>`<span class="chip">${c}</span>`).join(' ');
+
+      return `
+        <div class="bar" style="margin-bottom:6px;">
+          <h3>${title}${lemma}</h3>
+          <div class="row">
+            <button class="btn secondary" data-close>Close</button>
+            <button class="btn" data-save>Save</button>
+          </div>
+        </div>
+        <div class="sub">${pos} ${extra} ${tgt}</div>
+        ${senses}
+      `;
+    }
+
+    function saveVocab(entry){
+      const list = LS.vocab;
+      list.unshift({ t: Date.now(), entry });
+      LS.vocab = list.slice(0, 500);
+      renderVocab();
+    }
+
+    function renderVocab(){
+      const wrap = $('#vocabList'); wrap.innerHTML = '';
+      for(const item of LS.vocab){
+        const e = item.entry;
+        const div = document.createElement('div');
+        div.style.padding = '6px 8px';
+        div.style.borderBottom = '1px solid #22263c';
+        div.innerHTML = `<strong>${escapeHtml(e.span||e.head)}</strong> <span style="color:var(--muted)">${escapeHtml(e.pos||'')}</span><br><span style="color:#b9c3e0">${escapeHtml(e.senses?.[0]?.gloss||'')}</span>`;
+        wrap.appendChild(div);
+      }
+    }
+
+    $('#exportCsv').addEventListener('click', () => {
+      const rows = [['term','pos','gloss','translation','lemma']];
+      for(const v of LS.vocab){
+        const e = v.entry; rows.push([
+          e.span||e.head||'', e.pos||'', e.senses?.[0]?.gloss||'', (e.translations?Object.values(e.translations).join(' / '):''), e.lemma||''
+        ]);
+      }
+      const csv = rows.map(r=>r.map(x=>`"${(x||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'vocab.csv'; a.click();
+    });
+
+    $('#clearVocab').addEventListener('click', () => { if(confirm('Clear all saved vocab?')){ LS.vocab = []; renderVocab(); } });
+
+    $('#clearCache').addEventListener('click', () => { if(confirm('Clear cached definitions?')){ LS.cache = {}; alert('Cleared.'); } });
+
+    $('#reopenLast').addEventListener('click', reopenLastIfPermitted);
+
+    $('#testPing').addEventListener('click', async () => {
+      const cfg = LS.k; if(!cfg.apiKey){ alert('Set API key first.'); return; }
+      try {
+        const data = await lookupMeaning({ head:'bank', sentence:'He sat by the bank of the river and read a book.', lang: LS.k.srcLang||'en' });
+        alert('OK: sample lookup returned: '+ (data?.senses?.[0]?.gloss || 'no gloss'));
+      } catch (e){ alert('Error: '+e.message); }
+    });
+
+    // ---------------------------
+    // Settings persistence
+    // ---------------------------
+    function loadSettingsUI(){
+      const cfg = LS.k;
+      $('#apiKey').value = cfg.apiKey || '';
+      $('#model').value = cfg.model || 'gemini-1.5-flash';
+      $('#srcLang').value = cfg.srcLang || 'ar';
+      $('#tgtLangs').value = cfg.tgtLangs || 'ar';
+      $('#dictMode').value = LS.dictMode || 'ar-ar';
+      $('#promptTpl').value = LS.prompt || getDefaultPrompt();
+      renderVocab();
+    }
+
+    $('#saveSettings').addEventListener('click', () => {
+      LS.k = {
+        apiKey: $('#apiKey').value.trim(),
+        model: $('#model').value.trim(),
+        srcLang: $('#srcLang').value.trim() || 'en',
+        tgtLangs: $('#tgtLangs').value.trim() || 'en'
+      };
+      LS.dictMode = $('#dictMode').value;
+      LS.prompt = $('#promptTpl').value;
+      alert('Saved to your browser.');
+    });
+
+    $('#resetPrompt').addEventListener('click', () => { 
+      if(confirm('Reset prompt to default for current dictionary mode?')){ 
+        $('#promptTpl').value = getDefaultPrompt(); 
+      } 
+    });
+
+    // When dictionary mode changes, update the prompt template
+    $('#dictMode').addEventListener('change', () => {
+      if (confirm('Switch dictionary mode? This will reset your custom prompt to the default for the selected mode.')) {
+        LS.dictMode = $('#dictMode').value;
+        const prompt = getDefaultPrompt();
+        $('#promptTpl').value = prompt;
+        LS.prompt = prompt;
+
+        // Optional: auto-tune src/target language fields
+        if (LS.dictMode.startsWith('ar-')) {
+          $('#srcLang').value = 'ar';
+          $('#tgtLangs').value = (LS.dictMode === 'ar-en') ? 'en' : 'ar';
+        } else if (LS.dictMode.startsWith('es-')) {
+          $('#srcLang').value = 'es';
+          $('#tgtLangs').value = (LS.dictMode === 'es-en') ? 'en' : 'es';
+        }
+
+        // Persist to LS.k immediately so lookups work without re-clicking Save
+        const cfg = LS.k;
+        LS.k = {
+          ...cfg,
+          srcLang: $('#srcLang').value.trim(),
+          tgtLangs: $('#tgtLangs').value.trim()
+        };
+
+        alert('Dictionary mode changed. Prompt and language defaults updated.');
+      } else {
+        // Revert the selection if user cancels
+        $('#dictMode').value = LS.dictMode;
+      }
+    });
+
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+
+    // ---------------------------
+    // Persistence Status Check
+    // ---------------------------
+    function updatePersistenceStatus() {
+      const statusSection = $('#persistenceStatus');
+      const icon = $('#persistenceIcon');
+      const message = $('#persistenceMessage');
+      const badge = $('#secureContextBadge');
+      
+      const isSecure = window.isSecureContext;
+      const hasFileSystemAPI = !!(window.showOpenFilePicker && 'storage' in navigator);
+      
+      if (!isSecure || !hasFileSystemAPI) {
+        statusSection.style.display = 'block';
+        statusSection.style.background = '#1a1410';
+        statusSection.style.borderColor = '#3a2f1a';
+        
+        icon.textContent = '⚠️';
+        badge.textContent = '⚠ Limited Persistence';
+        badge.style.background = '#3a2f1a';
+        badge.style.color = '#f59e0b';
+        badge.style.borderColor = '#5a4f2a';
+        badge.style.display = 'inline-block';
+        
+        if (!isSecure) {
+          message.innerHTML = `
+            <strong style="color:#f59e0b;">File auto-restore disabled:</strong> This page is not in a secure context.<br><br>
+            <strong>To enable automatic file persistence:</strong><br>
+            1. Open a terminal in this folder<br>
+            2. Run: <code style="background:#0a0a0a; padding:2px 6px; border-radius:4px;">python -m http.server 8000</code> (Python 3)<br>
+            &nbsp;&nbsp;&nbsp;or: <code style="background:#0a0a0a; padding:2px 6px; border-radius:4px;">python -m SimpleHTTPServer 8000</code> (Python 2)<br>
+            3. Open <code style="background:#0a0a0a; padding:2px 6px; border-radius:4px;">http://localhost:8000/${window.location.pathname.split('/').pop()}</code><br><br>
+            <em>Currently: Subtitles are cached as text, but video files must be reselected each session.</em>
+          `;
+        } else {
+          message.innerHTML = `
+            <strong style="color:#f59e0b;">File System API not available</strong> in this browser.<br>
+            Try Chrome, Edge, or Opera for full persistence support.
+          `;
+        }
+      } else {
+        statusSection.style.display = 'block';
+        statusSection.style.background = '#0f1a14';
+        statusSection.style.borderColor = '#1a3a2a';
+        
+        icon.textContent = '✓';
+        badge.textContent = '✓ Full Persistence';
+        badge.style.background = '#1a3a2a';
+        badge.style.color = '#10b981';
+        badge.style.borderColor = '#2a4a3a';
+        badge.style.display = 'inline-block';
+        
+        message.innerHTML = `
+          <strong style="color:#10b981;">Auto-restore enabled!</strong><br>
+          Files you load via "Load Video" and "Load Subtitles" will be automatically reopened on next visit,
+          including playback position and pause state. No need to reselect files after browser restart.
+        `;
+      }
+    }
+
+   // ---------------------------
+    // Default Prompt Templates
+    // ---------------------------
+    
+    // Arabic-Arabic dictionary with morphology
+    const DEFAULT_PROMPT_AR_AR = `أنت قاموس عربي-عربي حساس للسياق (Subtitle-aware).
+أعد **JSON فقط** وفق المخطط التالي (لا تضف أي تعليق أو كود):
+{
+  "head": string,
+  "span": string,
+  "lemma": string,
+  "lemma_vocalized": string|null,
+  "pos": string,
+  "mwe": boolean,
+  "root": string|null,
+  "morph": {
+    "number": "singular|dual|plural|unknown",
+    "gender": "masc|fem|common|unknown",
+    "singular": string|null,
+    "plural": string|null,
+    "verb": {
+      "past_3ms": string,
+      "present_3ms": string,
+      "masdar": string|null,
+      "form": string|null
+    }|null
+  },
+  "senses": [
+    { "gloss": string, "register": string|null, "example": string }
+  ],
+  "notes": string|null
+}
+
+القواعد:
+- مصدر النص {{SRC_LANG}}. اكتب التعاريف والأمثلة **بالعربية الفصحى فقط**، ولا تترجم إلى لغات أخرى.
+- فسِّر المعنى بحسب الجملة المعطاة وفضِّل التركيبات (الأفعال/التعابير المركبة) إن وجدت؛ عندها ضعها في "span" واجعل mwe=true.
+- للأسماء: إن كان المدخل جمعًا فأعد المفرد في morph.singular؛ وإن كان مفردًا فأعد الجمع الشائع في morph.plural.
+- للأفعال: أعِد صيغ الماضي (هو) والمضارع (هو)، وأضف المصدر والوزن إن أمكن.
+- اجعل "gloss" موجزًا (1–16 كلمة) مع مثال عربي قصير يوافق السياق.
+- الناتج يجب أن يكون JSON صالحًا فقط.
+
+الكلمة: "{{HEAD}}"
+الجملة: "{{SENTENCE}}"`;
+
+    // Arabic-English bilingual dictionary with morphology
+    const DEFAULT_PROMPT_AR_EN = `أنت قاموس عربي-إنجليزي حساس للسياق (Subtitle-aware).
+You are a context-aware Arabic-English dictionary.
+
+أعد **JSON فقط** وفق المخطط التالي (لا تضف أي تعليق أو كود):
+Return **JSON only** according to the following schema (no comments or code):
+
+{
+  "head": string,
+  "span": string,
+  "lemma": string,
+  "lemma_vocalized": string|null,
+  "pos": string,
+  "mwe": boolean,
+  "root": string|null,
+  "morph": {
+    "number": "singular|dual|plural|unknown",
+    "gender": "masc|fem|common|unknown",
+    "singular": string|null,
+    "plural": string|null,
+    "verb": {
+      "past_3ms": string,
+      "present_3ms": string,
+      "masdar": string|null,
+      "form": string|null
+    }|null
+  },
+  "senses": [
+    { 
+      "gloss": string,
+      "gloss_ar": string,
+      "register": string|null,
+      "example": string,
+      "example_en": string
+    }
+  ],
+  "notes": string|null
+}
+
+القواعد / Rules:
+- مصدر النص {{SRC_LANG}}. Source text is in {{SRC_LANG}}.
+- اكتب التعاريف بالإنجليزية في "gloss" وبالعربية الفصحى في "gloss_ar".
+  Write definitions in English in "gloss" and in Modern Standard Arabic in "gloss_ar".
+- فسِّر المعنى بحسب الجملة المعطاة وفضِّل التركيبات (الأفعال/التعابير المركبة) إن وجدت؛ عندها ضعها في "span" واجعل mwe=true.
+  Interpret the meaning according to the given sentence and prefer phrasal verbs/compound expressions if found; then put them in "span" and set mwe=true.
+- للأسماء: إن كان المدخل جمعًا فأعد المفرد في morph.singular؛ وإن كان مفردًا فأعد الجمع الشائع في morph.plural.
+  For nouns: If the entry is plural, return the singular in morph.singular; if singular, return the common plural in morph.plural.
+- للأفعال: أعِد صيغ الماضي (هو) والمضارع (هو)، وأضف المصدر والوزن إن أمكن.
+  For verbs: Return the past tense (he) and present tense (he) forms, and add the masdar and form if possible.
+- اجعل "gloss" موجزًا (1–16 كلمة) بالإنجليزية، و"gloss_ar" موجزًا بالعربية الفصحى.
+  Make "gloss" concise (1-16 words) in English, and "gloss_ar" concise in Modern Standard Arabic.
+- ضع مثالًا عربيًا قصيرًا يوافق السياق في "example" وترجمته في "example_en".
+  Put a short Arabic example matching the context in "example" and its translation in "example_en".
+- الناتج يجب أن يكون JSON صالحًا فقط. The output must be valid JSON only.
+
+الكلمة / Word: "{{HEAD}}"
+الجملة / Sentence: "{{SENTENCE}}"`;
+
+    // Spanish-Spanish dictionary with morphology
+    const DEFAULT_PROMPT_ES_ES = `Eres un diccionario español-español sensible al contexto (subtítulos).
+Devuelve **solo JSON** válido con este esquema (sin comentarios ni texto extra):
+{
+  "head": string,
+  "span": string,
+  "lemma": string,
+  "pos": string,
+  "mwe": boolean,
+  "morph": {
+    "number": "singular|plural|invariable|unknown",
+    "gender": "masc|fem|common|unknown",
+    "singular": string|null,
+    "plural": string|null,
+    "verb": {
+      "infinitive": string,
+      "gerund": string|null,
+      "participle": string|null,
+      "present_3s": string|null,
+      "preterite_3s": string|null
+    }|null
+  },
+  "senses": [
+    { "gloss": string, "register": string|null, "example": string }
+  ],
+  "notes": string|null
+}
+
+Reglas:
+- El texto fuente está en {{SRC_LANG}}. Define en **español estándar**, sin traducir a otros idiomas.
+- Interpreta el significado según la oración dada; si hay locución/verbo pronominal/compuesto, ponlo en "span" y mwe=true.
+- Sustantivos: si la entrada está en plural, devuelve el singular en morph.singular; si está en singular, devuelve el plural usual en morph.plural.
+- Verbos: devuelve infinitivo y, cuando sea posible, gerundio, participio, y las formas de **presente (3ª sg.)** y **pretérito (3ª sg.)**.
+- Mantén "gloss" concisa (1–16 palabras) con **un ejemplo breve en español** acorde al contexto.
+- La salida debe ser JSON válido exclusivamente.
+
+Palabra: "{{HEAD}}"
+Oración: "{{SENTENCE}}"`;
+
+    // Spanish-English bilingual dictionary with morphology
+    const DEFAULT_PROMPT_ES_EN = `Eres un diccionario español-inglés sensible al contexto (subtítulos).
+Return **valid JSON only** with this schema (no comments, no extra text):
+
+{
+  "head": string,
+  "span": string,
+  "lemma": string,
+  "pos": string,
+  "mwe": boolean,
+  "morph": {
+    "number": "singular|plural|invariable|unknown",
+    "gender": "masc|fem|common|unknown",
+    "singular": string|null,
+    "plural": string|null,
+    "verb": {
+      "infinitive": string,
+      "gerund": string|null,
+      "participle": string|null,
+      "present_3s": string|null,
+      "preterite_3s": string|null
+    }|null
+  },
+  "senses": [
+    { 
+      "gloss": string,        // English definition (concise)
+      "gloss_es": string,     // Spanish definition (concise)
+      "register": string|null,
+      "example": string,      // Short example in Spanish
+      "example_en": string    // Its English translation
+    }
+  ],
+  "notes": string|null
+}
+
+Rules:
+- Source text is in {{SRC_LANG}}.
+- "gloss" must be in English; "gloss_es" must be in standard Spanish.
+- Prefer phrasal/multiword spans if that's what the sentence implies; then put it in "span" and set mwe=true.
+- Nouns: if input is plural, return singular in morph.singular; if singular, return common plural in morph.plural.
+- Verbs: return infinitive and (if possible) gerund, participle, present_3s, preterite_3s.
+- Keep both glosses concise (1–16 words). Provide a short Spanish example and its English translation.
+- Output must be **valid JSON only**.
+
+Word: "{{HEAD}}"
+Sentence: "{{SENTENCE}}"`;
+
+    // Helper function to get the current default prompt based on dictionary mode
+    function getDefaultPrompt() {
+      switch (LS.dictMode) {
+        case 'ar-en': return DEFAULT_PROMPT_AR_EN;
+        case 'ar-ar': return DEFAULT_PROMPT_AR_AR;
+        case 'es-en': return DEFAULT_PROMPT_ES_EN;
+        case 'es-es': return DEFAULT_PROMPT_ES_ES;
+        default:       return DEFAULT_PROMPT_AR_AR; // safe fallback
+      }
+    }
+
+
+    // Initialize UI
+    (async function init(){
+      // Check secure context and update UI
+      updatePersistenceStatus();
+      
+      // Initialize with appropriate default prompt if none exists
+      if (!LS.prompt) {
+        LS.prompt = getDefaultPrompt();
+      }
+      loadSettingsUI();
+      // Hide overlay initially
+      subsOverlay.style.display = 'none';
+
+      // Restore subtitles from storage immediately (cheap)
+      if (LS.vttText) {
+        const blob = new Blob([LS.vttText], {type:'text/vtt'});
+        trackEl.src = URL.createObjectURL(blob);
+        const t = vid.textTracks[0];
+        if (t){ t.mode='hidden'; t.addEventListener('cuechange', updateActiveCueOverlay); }
+      }
+
+      // AUTO-RESTORE: Try to reopen the last video and subtitles automatically
+      try {
+        const vHandle = await HandlesDB.get('video');
+        const sHandle = await HandlesDB.get('subs');
+        
+        // Only auto-restore if we have at least one file
+        if (vHandle || sHandle || LS.vttText) {
+          console.log('🔄 Auto-restore: Checking for saved files...');
+          let restoredCount = 0;
+          
+          // Restore video if handle exists
+          if (vHandle) {
+            try {
+              // Check permission first
+              let permission = await vHandle.queryPermission?.({ mode: 'read' });
+              if (permission !== 'granted') {
+                console.log('📁 Requesting permission for video file...');
+                permission = await vHandle.requestPermission?.({ mode: 'read' });
+              }
+              
+              if (permission === 'granted') {
+                const file = await vHandle.getFile();
+                CUR_SIG = VS.sigFromFile(file);
+                resetAudioTrackSelector();
+                vid.src = URL.createObjectURL(file);
+                vid.load();
+                console.log('✅ Video restored:', file.name);
+                restoredCount++;
+              } else {
+                console.log('❌ Video permission denied');
+              }
+            } catch (err) {
+              console.log('⚠️ Could not restore video:', err.message);
+            }
+          }
+          
+          // Restore subtitles if handle exists
+          if (sHandle) {
+            try {
+              let permission = await sHandle.queryPermission?.({ mode: 'read' });
+              if (permission !== 'granted') {
+                console.log('📁 Requesting permission for subtitle file...');
+                permission = await sHandle.requestPermission?.({ mode: 'read' });
+              }
+              
+              if (permission === 'granted') {
+                const text = await (await sHandle.getFile()).text();
+                let t = text;
+                if(/\d+\s*\n\d{2}:\d{2}:\d{2},\d{3}\s-->\s\d{2}:\d{2}:\d{2},\d{3}/.test(t)) {
+                  t = 'WEBVTT\n\n' + t.replace(/,(?=\d{3})/g,'.');
+                } else if(!/^WEBVTT/.test(t)) {
+                  t = 'WEBVTT\n\n' + t;
+                }
+                LS.vttText = t;
+                const blob = new Blob([t], {type:'text/vtt'});
+                trackEl.src = URL.createObjectURL(blob);
+                const tt = vid.textTracks[0];
+                if (tt) {
+                  tt.mode='hidden';
+                  tt.addEventListener('cuechange', updateActiveCueOverlay);
+                }
+                console.log('✅ Subtitles restored from file handle');
+                restoredCount++;
+              } else {
+                console.log('❌ Subtitle permission denied');
+              }
+            } catch (err) {
+              console.log('⚠️ Could not restore subtitles from handle:', err.message);
+            }
+          }
+          
+          if (restoredCount > 0) {
+            console.log(`✨ Successfully restored ${restoredCount} file(s) from last session`);
+          } else if (LS.vttText) {
+            console.log('ℹ️ Subtitles available from text cache (file handle not available)');
+          }
+        } else {
+          console.log('ℹ️ No saved files to restore. Load a video and subtitles to get started!');
+        }
+      } catch (err) {
+        console.log('⚠️ Auto-restore failed:', err.message);
+      }
+    })();
+  </script>
+
+  <!--
+  ============================
+  OPTIONAL: Tiny proxy for production (keeps API key secret)
+  Save as server.js and run: npm i express node-fetch && node server.js
+  Then call /api/lex from the client instead of Gemini directly.
+  ============================
+
+  const express = require('express');
+  const fetch = (...args)=>import('node-fetch').then(({default:fetch})=>fetch(...args));
+  const app = express(); app.use(express.json());
+  const API_KEY = process.env.GEMINI_API_KEY;
+  const MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  app.post('/api/lex', async (req, res) => {
+    const { prompt } = req.body || {};
+    if(!prompt) return res.status(400).json({error:'missing prompt'});
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+    const body = { contents:[{role:'user',parts:[{text:prompt}]}], generationConfig:{temperature:0.3,maxOutputTokens:512} };
+    const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const j = await r.json();
+    const text = (j.candidates?.[0]?.content?.parts?.map(p=>p.text).join('')) || j.output_text || '';
+    res.json({ text });
+  });
+  app.listen(8787, ()=>console.log('Proxy listening on http://localhost:8787'));
+  -->
+</body>
+</html>
