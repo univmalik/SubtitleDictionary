@@ -20,3 +20,5 @@ Few screenshots!
 <img width="1044" height="664" alt="image" src="https://github.com/user-attachments/assets/52d03fdc-3aaa-4544-b513-63e796f9e1ce" />
 
 Will be improving this subtitle dictionary! 
+
+Best works in Safari! Especially for multi audio channel videos, which only work in Safari! 
